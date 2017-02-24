@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="X-UA-Compatible" content="IE=edge"><meta name="author" content="Ben Wong,wenbinben@gmail.com"><title> · Kevinlee’s Blog</title><meta name="description" content="##Android内存泄露问题整理
+现象本质：被销毁的对象被其他生命周期比他长的对象引用，导致GC root与它存在强可及关系，不能被gc回收释放其内存空间。
+###一、Activity被非静态内部类或匿名内部类引用非静态内部类会隐式的持有外部类的强引用。比如handler和asyncTask中处理"><meta name="keywords" content="Hexo,HTML,Ben,CSS,安卓,android,Linux,linuxdeepin"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="renderer" content="webkit"><link rel="short icon" href="/images/favicon.png" type="image/x-icon"><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/blog_basic.css"><link rel="stylesheet" href="/css/font-awesome.min.css"><link rel="alternate" type="application/atom+xml" title="ATOM 1.0" href="/atom.xml"></head><body><div class="sidebar animated fadeInDown"><div class="logo-title"><div class="title"><img src="/images/logo@2x.png" style="width:127px;"><h3 title=""><a href="/">Kevinlee’s Blog</a></h3><div class="description"><p>Nothing lasts forever.</p></div></div></div><ul class="social-links"><li><a href="https://twitter.com/Ben_wenbin"><i class="fa fa-twitter"></i></a></li><li><a href="http://instagram.com/hwbinbenben"><i class="fa fa-instagram"></i></a></li><li><a href="/atom.xml"><i class="fa fa-rss"></i></a></li><li><a href="http://weibo.com/ben0036"><i class="fa fa-weibo"></i></a></li></ul><div class="footer"><a target="_blank" href="/"><span>Theme by </span></a><a href="https://www.caicai.me"> CaiCai</a><span>&</span><a href="https://github.com/Ben02/hexo-theme-Anatole"> Ben</a><div class="by_farbox"><a href="https://hexo.io/zh-cn/" target="_blank">Proudly published with Hexo&#65281;</a></div></div></div><div class="main"><div class="page-top animated fadeInDown"><div class="nav"><li><a href="/">首页</a></li><li><a href="/about" class="current">关于</a></li><li><a href="/archives">归档</a></li><li><a href="/links">友链</a></li></div><div class="information"><div class="back_btn"><li><a onclick="window.history.go(-1)" style="display:none;" class="fa fa-chevron-left"> </a></li></div><div class="avatar"><img src="https://secure.gravatar.com/avatar/e71df8021446fe9759a9928b1dd5c28d?s=180&amp;r=G&amp;d="></div></div></div><div class="autopagerize_page_element"><div class="content"><div class="post-page"><div class="post animated fadeInDown"><div class="post-title"><h3><a></a></h3></div><div class="post-content"><p>##Android内存泄露问题整理</p>
+<p><em>现象本质：被销毁的对象被其他生命周期比他长的对象引用，导致GC root与它存在强可及关系，不能被gc回收释放其内存空间。</em></p>
+<p>###一、Activity被非静态内部类或匿名内部类引用<br>非静态内部类会隐式的持有外部类的强引用。比如handler和asyncTask中处理耗时任务时退出activity，因为Looper对象会保存一个与之关联的线程的引用，looper引用了与它关联的handler，handler又引用了activity，导致activity内存空间不能被gc回收。<br>解决方案：类改为静态，使用WeakSoftReference引用activity。onDestroy中调用removeCallbacks将消息队列中还在等待的message移除。</p>
+<p>###二、静态变量持有短生命周期对象的引用<br>不规范的单例写法，如Activity中实例化一个静态类A的getInstance（Context），传入的是activity的Context，而这个实例是属于类而不是属于对象，它不会被系统回收，它会一直持有activity的引用。类似一种情况，写单例吐司。<br>解决方案：注意对Context的引用不要超过它本身的生命周期，如对象的生命周期比activity长，可以使用applicationContext替代。</p>
+<p>###三、资源对象没关闭造成的内存泄露<br>资源性对象如Cursor、Stream、Socket，Bitmap，应该在使用后及时关闭。未在finally中关闭，会导致异常情况下资源对象未被释放的隐患。</p>
+<p>###四、注册对象未反注册<br>我们常常写很多的Listener,未反注册会导致观察者列表里维持着对象的引用，阻止垃圾回收。</p>
+<p>###五、静态变量持有大数据对象<br>静态变量长期维持到大数据对象（Bitmap）的引用，阻止垃圾回收。Bitmap对象在不使用时，我们应该先调用recycle()释放内存，然后才它设置为null。</p>
+<p>###六、静态集合没有清理<br>我们通常把一些对象的引用加入到了集合容器（比如ArrayList）中，当我们不需要该对象时，并没有把它的引用从集合中清理掉，这样这个集合就会越来越大。如果这个集合是static的话，那情况就更严重了。所以要在退出程序之前，将集合里的东西clear，然后置为null</p>
+<p>###七、WebView内存泄露<br>在Android5.1系统中，会发现App存在 WebView 泄漏情况，属于系统bug。<br>在一个Activity中包含着一个WebView，通过WebView不停的访问Web页面，会发现内存会一直增长，退出此Activity，内存依然没有被释放。这就导致即使是完全退出了整个APP，内存也没有被释放掉，机器会表现的越来越很慢。<br>避免WebView内存泄露的一些方式</p>
+<p>1.可以将 Webview 的 Activity 新起一个进程，结束的时候直接System.exit(0);退出当前进程；<br>启动新进程，主要代码： AndroidManifest.xml 配置文件代码如下</p>
+<pre><code>&lt;activity
+    android:name=&quot;.ui.activity.Html5Activity&quot;
+    android:process=&quot;:lyl.boon.process.web&quot;&gt;
+    &lt;intent-filter&gt;
+        &lt;action android:name=&quot;com.lyl.boon.ui.activity.htmlactivity&quot;/&gt;
+        &lt;category android:name=&quot;android.intent.category.DEFAULT&quot;/&gt;
+    &lt;/intent-filter&gt;
+&lt;/activity&gt;
+</code></pre><p>在新进程中启动 Activity ，里面传了 一个 Url：</p>
+<pre><code>Intent intent = new Intent(&quot;com.lyl.boon.ui.activity.htmlactivity&quot;);
+Bundle bundle = new Bundle();
+bundle.putString(&quot;url&quot;, gankDataEntity.getUrl());
+intent.putExtra(&quot;bundle&quot;,bundle);
+startActivity(intent);
+</code></pre><p>然后在 Html5Activity 的onDestory() 最后加上 System.exit(0); 杀死当前进程。</p>
+<p>2.不能在xml中定义 Webview ，而是在需要的时候创建，并且Context使用 getApplicationgContext()，如下代码：</p>
+<pre><code>LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+mWebView = new WebView(getApplicationContext());
+mWebView.setLayoutParams(params);
+mLayout.addView(mWebView);
+</code></pre><p>3.在 Activity 销毁的时候，可以先让 WebView 加载null内容，然后移除 WebView，再销毁 WebView，最后置空。<br>代码如下：</p>
+<pre><code>@Override
+protected void onDestroy() {
+    if (mWebView != null) {
+        mWebView.loadDataWithBaseURL(null, &quot;&quot;, &quot;text/html&quot;, &quot;utf-8&quot;, null);
+        mWebView.clearHistory();
+
+        ((ViewGroup) mWebView.getParent()).removeView(mWebView);
+        mWebView.destroy();
+        mWebView = null;
+    }
+    super.onDestroy();
+}
+</code></pre><p>###gc工作原理<br>任何一种垃圾回收算法一般要做两件基本事情：（1）发现无用的信息对象，标记为垃圾；（2）回收将无用对象占用的内存空间。使该空间可被程序再次使用。<br>程序把所有的引用关系看作一张图，从一个节点GC ROOT开始，寻找对应的引用节点，找到这个节点以后，继续寻找这个节点的引用节点，当所有的引用节点寻找完毕之后，剩余的节点则被认为是没有被引用到的节点，即无用的节点。如果这个对象是引用可达的, 则称之为活的(live), 反之, 如果这个对象引用不可达, 则称之为死的(dead), 也可以称之为垃圾(garbage)</p>
+<p>那么都有哪些资源是GC Roots呢？</p>
+<p>1.Class 由System Class Loader/Boot Class Loader加载的类，这些类不会被回收。注意是类不会被回收，实例还是会被回收的，但是不依赖实例的静态static变量是依赖类的，因此很多内存泄露都是因为被静态变量引用导致的。</p>
+<p>2.Thread 线程，激活状态的线程；</p>
+<p>3.Stack Local 栈中的对象。每个线程都会分配一个栈，栈中的局部变量或者参数都是GC root，因为它们的引用随时可能被用到；</p>
+<p>4.JNI Local JNI中的局部变量和参数引用的对象；可能在JNI中定义的，也可能在虚拟机中定义</p>
+<p>5.JNI Global JNI中的全局变量引用的对象；同上</p>
+<p>6.Monitor Used 用于保证同步的对象，例如wait()，notify()中使用的对象、锁等。</p>
+<p>7.Held by JVM JVM持有的对象。JVM为了特殊用途保留的对象，它与JVM的具体实现有关。比如有System Class Loader, 一些Exceptions对象，和一些其它的Class Loader。对于这些类，JVM也没有过多的信息。</p>
+<p>也就是说所有的内存泄漏问题从根本上都是因为被这些GC Root引用着导致的</p>
+</div><div class="post-footer"><div class="meta"><div class="info"><i class="fa fa-sun-o"></i><span class="date">2017-02-24</span><i class="fa fa-comment-o"></i><a href="/about/index.html#comments">评论</a></div></div></div></div><a id="comments"></a><div id="disqus_thread"></div><script>var disqus_shortname = 'seansun';
+var disqus_identifier = 'about/index.html';
+var disqus_title = '';
+var disqus_url = 'https://martianisme.github.io/about/index.html';
+(function() {
+    var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+    dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+    (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+})();</script><script id="dsq-count-scr" src="//seansun.disqus.com/count.js" async></script></div></div></div></div><script src="/js/jquery.js"></script><script src="/js/jquery-migrate-1.2.1.min.js"></script><script src="/js/jquery.appear.js"></script></body></html>
